@@ -128,8 +128,12 @@ app.post(
   async (req: Request, res: Response) => {
     const { email, password } = req.body || {};
 
+    if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
     const u = await db.user.findUnique({
-      where: { email },
+      where: { email: email.trim().toLowerCase() },
       include: {
         agency: true,
         client: true
@@ -404,6 +408,7 @@ app.get(
   '/api/dashboard',
   auth,
   agency,
+  roles(Role.AGENCY_ADMIN, Role.AGENCY_TEAM, Role.CLIENT),
   async (req: AuthReq, res: Response) => {
     const user = req.user!;
     const aid = tenant(user);
@@ -887,13 +892,153 @@ app.patch(
       });
     }
 
+    const allowedStatuses = ['OPEN', 'IN_REVIEW', 'IN_PROGRESS', 'RESOLVED', 'DECLINED'];
+    if (!allowedStatuses.includes(req.body?.status)) {
+      return res.status(400).json({ error: 'Invalid feedback status' });
+    }
+
     const updated = await db.feedback.update({
       where: { id: f.id },
+      data: { status: req.body.status }
+    });
+
+    await db.activity.create({
       data: {
-        status: req.body.status
+        type: 'feedback.status_updated',
+        message: `Feedback "${f.title}" marked ${req.body.status.toLowerCase().replace('_', ' ')}`,
+        agencyId: tenant(req.user!),
+        projectId: f.projectId
       }
     });
 
+    res.json(updated);
+  }
+);
+
+// Agency team management
+app.get(
+  '/api/team',
+  auth,
+  agency,
+  roles(Role.AGENCY_ADMIN, Role.AGENCY_TEAM),
+  async (req: AuthReq, res: Response) => {
+    const rows = await db.user.findMany({
+      where: {
+        agencyId: tenant(req.user!),
+        role: { in: [Role.AGENCY_ADMIN, Role.AGENCY_TEAM] }
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+    res.json(rows);
+  }
+);
+
+app.post(
+  '/api/team',
+  auth,
+  agency,
+  roles(Role.AGENCY_ADMIN),
+  async (req: AuthReq, res: Response) => {
+    const { name, email, password } = req.body || {};
+    if (
+      typeof name !== 'string' || !name.trim() ||
+      typeof email !== 'string' || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email.trim()) ||
+      typeof password !== 'string' || password.length < 8
+    ) {
+      return res.status(400).json({
+        error: 'Enter a name, valid email and password of at least 8 characters'
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const exists = await db.user.findUnique({ where: { email: normalizedEmail } });
+    if (exists) {
+      return res.status(409).json({ error: 'An account with this email already exists' });
+    }
+
+    const created = await db.user.create({
+      data: {
+        name: name.trim(),
+        email: normalizedEmail,
+        password: await bcrypt.hash(password, 12),
+        role: Role.AGENCY_TEAM,
+        agencyId: tenant(req.user!)
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true
+      }
+    });
+
+    await db.activity.create({
+      data: {
+        type: 'team.member_created',
+        message: `Team member ${created.name} added`,
+        agencyId: tenant(req.user!)
+      }
+    });
+    res.status(201).json(created);
+  }
+);
+
+// Agency activity feed; clients only receive explicitly shared entries.
+app.get(
+  '/api/activities',
+  auth,
+  agency,
+  async (req: AuthReq, res: Response) => {
+    const user = req.user!;
+    if (!requireClientId(req, res)) return;
+    const rows = await db.activity.findMany({
+      where: {
+        agencyId: tenant(user),
+        ...(user.role === Role.CLIENT ? { visibility: 'CLIENT' } : {}),
+        ...(req.query.projectId ? { projectId: Number(req.query.projectId) } : {})
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+    res.json(rows);
+  }
+);
+
+// Update project status without allowing cross-tenant project IDs.
+app.patch(
+  '/api/projects/:id/status',
+  auth,
+  agency,
+  roles(Role.AGENCY_ADMIN, Role.AGENCY_TEAM),
+  async (req: AuthReq, res: Response) => {
+    const allowed = ['PLANNING', 'ACTIVE', 'ON_HOLD', 'COMPLETED'];
+    if (!allowed.includes(req.body?.status)) {
+      return res.status(400).json({ error: 'Invalid project status' });
+    }
+    const project = await db.project.findFirst({
+      where: { id: Number(req.params.id), agencyId: tenant(req.user!) }
+    });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    const updated = await db.project.update({
+      where: { id: project.id },
+      data: { status: req.body.status }
+    });
+    await db.activity.create({
+      data: {
+        type: 'project.status_updated',
+        message: `Project ${project.name} status changed to ${req.body.status}`,
+        agencyId: tenant(req.user!),
+        projectId: project.id
+      }
+    });
     res.json(updated);
   }
 );
