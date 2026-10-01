@@ -128,8 +128,12 @@ app.post(
   async (req: Request, res: Response) => {
     const { email, password } = req.body || {};
 
+    if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
     const u = await db.user.findUnique({
-      where: { email },
+      where: { email: email.trim().toLowerCase() },
       include: {
         agency: true,
         client: true
@@ -404,6 +408,7 @@ app.get(
   '/api/dashboard',
   auth,
   agency,
+  roles(Role.AGENCY_ADMIN, Role.AGENCY_TEAM, Role.CLIENT),
   async (req: AuthReq, res: Response) => {
     const user = req.user!;
     const aid = tenant(user);
@@ -887,10 +892,22 @@ app.patch(
       });
     }
 
+    const allowedStatuses = ['OPEN', 'IN_REVIEW', 'IN_PROGRESS', 'RESOLVED', 'DECLINED'];
+    if (!allowedStatuses.includes(req.body?.status)) {
+      return res.status(400).json({ error: 'Invalid feedback status' });
+    }
+
     const updated = await db.feedback.update({
       where: { id: f.id },
+      data: { status: req.body.status }
+    });
+
+    await db.activity.create({
       data: {
-        status: req.body.status
+        type: 'feedback.status_updated',
+        message: `Feedback "${f.title}" marked ${req.body.status.toLowerCase().replace('_', ' ')}`,
+        agencyId: tenant(req.user!),
+        projectId: f.projectId
       }
     });
 
