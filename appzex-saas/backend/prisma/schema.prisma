@@ -1,0 +1,153 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  AGENCY_ADMIN
+  AGENCY_TEAM
+  CLIENT
+}
+
+enum Status {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum FeedbackStatus {
+  OPEN
+  IN_REVIEW
+  IN_PROGRESS
+  RESOLVED
+  DECLINED
+}
+
+model Agency {
+  id         Int      @id @default(autoincrement())
+  name       String
+  email      String
+  status     Status   @default(ACTIVE)
+  createdAt  DateTime @default(now())
+  users      User[]
+  clients    Client[]
+  projects   Project[]
+  activities Activity[]
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  name          String
+  email         String   @unique
+  password      String
+  role          Role
+  agencyId      Int?
+  clientId      Int?
+  createdAt     DateTime @default(now())
+  agency        Agency?  @relation(fields: [agencyId], references: [id])
+  client        Client?  @relation(fields: [clientId], references: [id])
+  assignedTasks Task[]   @relation("Assignee")
+}
+
+model Client {
+  id          Int      @id @default(autoincrement())
+  company     String
+  contactName String
+  email       String
+  phone       String?
+  notes       String?  @db.Text
+  agencyId    Int
+  agency      Agency   @relation(fields: [agencyId], references: [id])
+  users       User[]
+  projects    Project[]
+  createdAt   DateTime @default(now())
+}
+
+model Project {
+  id          Int           @id @default(autoincrement())
+  name        String
+  description String        @db.Text
+  status      ProjectStatus @default(PLANNING)
+  priority    Priority      @default(MEDIUM)
+  startDate   DateTime?
+  dueDate     DateTime?
+  agencyId    Int
+  clientId    Int
+  agency      Agency        @relation(fields: [agencyId], references: [id])
+  client      Client        @relation(fields: [clientId], references: [id])
+  tasks       Task[]
+  feedback    Feedback[]
+  meetings    Meeting[]
+  createdAt   DateTime      @default(now())
+}
+
+model Task {
+  id          Int        @id @default(autoincrement())
+  title       String
+  description String     @db.Text
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  dueDate     DateTime?
+  projectId   Int
+  assigneeId  Int?
+  project     Project    @relation(fields: [projectId], references: [id])
+  assignee    User?      @relation("Assignee", fields: [assigneeId], references: [id])
+  createdAt   DateTime   @default(now())
+}
+
+model Feedback {
+  id          Int            @id @default(autoincrement())
+  title       String
+  description String         @db.Text
+  status      FeedbackStatus @default(OPEN)
+  projectId   Int
+  project     Project        @relation(fields: [projectId], references: [id])
+  createdAt   DateTime       @default(now())
+}
+
+model Meeting {
+  id               Int      @id @default(autoincrement())
+  title            String
+  notes            String   @db.Text
+  date             DateTime
+  sharedWithClient Boolean  @default(false)
+  projectId        Int
+  project          Project  @relation(fields: [projectId], references: [id])
+}
+
+model Activity {
+  id         Int      @id @default(autoincrement())
+  type       String
+  message    String
+  visibility String   @default("INTERNAL")
+  agencyId   Int
+  projectId  Int?
+  createdAt  DateTime @default(now())
+  agency     Agency   @relation(fields: [agencyId], references: [id])
+}
