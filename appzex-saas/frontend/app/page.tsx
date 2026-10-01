@@ -36,6 +36,7 @@ export default function Home() {
   const [data, setData] = useState<any>(null);
   const [agencies, setAgencies] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
+  const [team, setTeam] = useState<any[]>([]);
   const [tab, setTab] = useState('Overview');
   const [modal, setModal] = useState('');
   const [form, setForm] = useState<any>({});
@@ -78,11 +79,12 @@ export default function Home() {
         setData(overview);
         setAgencies(list);
       } else {
-        const [d, p, f, c] = await Promise.all([
+        const [d, p, f, c, t] = await Promise.all([
           call('/dashboard'),
           call('/projects'),
           call('/feedback'),
           call('/clients').catch(() => []),
+          isClient ? Promise.resolve([]) : call('/team').catch(() => []),
         ]);
 
         setData({
@@ -92,6 +94,7 @@ export default function Home() {
         });
 
         setClients(c);
+        setTeam(t);
       }
     } catch (e: any) {
       setError(e.message);
@@ -144,6 +147,10 @@ export default function Home() {
 
       if (modal === 'agency') {
         await call('/admin/agencies', 'POST', form);
+      }
+
+      if (modal === 'team') {
+        await call('/team', 'POST', form);
       }
 
       setModal('');
@@ -760,14 +767,33 @@ export default function Home() {
 
               {/* TEAM */}
               {tab === 'Team' && (
-                <div className="card">
-                  <b>Team management</b>
-                  <p className="muted">
-                    Role-aware team access is enabled. Team
-                    invitations and role editing are planned
-                    extensions for this MVP.
-                  </p>
-                </div>
+                <>
+                  <div className="sectionrow">
+                    <div className="sectiontitle">Agency team</div>
+                    {user.role === 'AGENCY_ADMIN' && (
+                      <button className="btn" onClick={() => {
+                        setForm({});
+                        setModal('team');
+                      }}>＋ Add team member</button>
+                    )}
+                  </div>
+                  <div className="card" style={{ overflowX: 'auto' }}>
+                    <table className="table">
+                      <thead><tr><th>NAME</th><th>EMAIL</th><th>ROLE</th><th>JOINED</th></tr></thead>
+                      <tbody>
+                        {team.map((member) => (
+                          <tr key={member.id}>
+                            <td><b>{member.name}</b></td>
+                            <td>{member.email}</td>
+                            <td><span className="pill">{member.role.replace('_', ' ')}</span></td>
+                            <td>{new Date(member.createdAt).toLocaleDateString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {!team.length && <p className="muted">No team members found.</p>}
+                  </div>
+                </>
               )}
             </>
           )}
@@ -795,7 +821,9 @@ export default function Home() {
                     ? 'Create project'
                     : modal === 'agency'
                       ? 'Create Agency'
-                      : 'AI-generated client update'}
+                      : modal === 'team'
+                        ? 'Add team member'
+                        : 'AI-generated client update'}
               </div>
 
               <button
@@ -905,6 +933,19 @@ export default function Home() {
                       The admin will use these details to sign in
                       to the agency workspace.
                     </p>
+                  </>
+                )}
+
+                {/* ADD TEAM MEMBER */}
+                {modal === 'team' && (
+                  <>
+                    <label className="small">Full name</label>
+                    <input className="input" value={form.name || ''} onChange={(e) => set('name', e.target.value)} placeholder="Team member name" />
+                    <label className="small">Email</label>
+                    <input className="input" type="email" value={form.email || ''} onChange={(e) => set('email', e.target.value)} placeholder="member@example.com" />
+                    <label className="small">Temporary password</label>
+                    <input className="input" type="password" value={form.password || ''} onChange={(e) => set('password', e.target.value)} placeholder="At least 8 characters" />
+                    <p className="small">This account will have Agency Team permissions.</p>
                   </>
                 )}
 
@@ -1022,6 +1063,7 @@ export default function Home() {
                   className="btn"
                   disabled={
                     busy ||
+                    (modal === 'team' && (!form.name?.trim() || !form.email?.trim() || !form.password || form.password.length < 8)) ||
                     (modal === 'agency' &&
                       (!form.name?.trim() ||
                         !form.email?.trim() ||
