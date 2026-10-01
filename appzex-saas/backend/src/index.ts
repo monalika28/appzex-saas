@@ -9,12 +9,13 @@ import OpenAI from 'openai';
 
 const app = express();
 
-// any avoids TypeScript errors from a potentially outdated generated Prisma Client.
-// Ensure Prisma Client is generated from the current schema before deployment.
+// Prisma Client
 const db: any = new PrismaClient();
 const secret = process.env.JWT_SECRET || 'dev-only-change-me';
 
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000' }));
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000'
+}));
 app.use(express.json());
 
 type AuthReq = Request & {
@@ -27,6 +28,7 @@ type AuthReq = Request & {
   };
 };
 
+// Authentication middleware
 const auth = (
   req: AuthReq,
   res: Response,
@@ -36,25 +38,37 @@ const auth = (
     const h = req.headers.authorization;
 
     if (!h?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Login required' });
+      return res.status(401).json({
+        error: 'Login required'
+      });
     }
 
-    req.user = jwt.verify(h.slice(7), secret) as AuthReq['user'];
+    req.user = jwt.verify(
+      h.slice(7),
+      secret
+    ) as AuthReq['user'];
+
     next();
   } catch {
-    return res.status(401).json({ error: 'Invalid or expired token' });
+    return res.status(401).json({
+      error: 'Invalid or expired token'
+    });
   }
 };
 
+// Role-based access middleware
 const roles = (...allowedRoles: Role[]) =>
   (req: AuthReq, res: Response, next: NextFunction) => {
     if (!req.user || !allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+      return res.status(403).json({
+        error: 'Access denied'
+      });
     }
 
     next();
   };
 
+// Agency access middleware
 const agency = (
   req: AuthReq,
   res: Response,
@@ -65,11 +79,15 @@ const agency = (
   }
 
   if (!req.user?.agencyId) {
-    return res.status(403).json({ error: 'Agency access required' });
+    return res.status(403).json({
+      error: 'Agency access required'
+    });
   }
 
   db.agency
-    .findUnique({ where: { id: req.user.agencyId } })
+    .findUnique({
+      where: { id: req.user.agencyId }
+    })
     .then((a: any) => {
       if (!a || a.status !== 'ACTIVE') {
         return res.status(403).json({
@@ -86,70 +104,96 @@ const tenant = (u: NonNullable<AuthReq['user']>) => u.agencyId!;
 
 const requireClientId = (req: AuthReq, res: Response) => {
   if (req.user?.role === 'CLIENT' && req.user.clientId == null) {
-    res.status(403).json({ error: 'Client access is not configured' });
+    res.status(403).json({
+      error: 'Client access is not configured'
+    });
+
     return false;
   }
 
   return true;
 };
 
+// Health check
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, name: 'AgencyFlow API' });
+  res.json({
+    ok: true,
+    name: 'AgencyFlow API'
+  });
 });
 
 // Authentication
-app.post('/api/auth/login', async (req: Request, res: Response) => {
-  const { email, password } = req.body || {};
+app.post(
+  '/api/auth/login',
+  async (req: Request, res: Response) => {
+    const { email, password } = req.body || {};
 
-  const u = await db.user.findUnique({
-    where: { email },
-    include: { agency: true, client: true }
-  });
+    const u = await db.user.findUnique({
+      where: { email },
+      include: {
+        agency: true,
+        client: true
+      }
+    });
 
-  if (!u || !await bcrypt.compare(password || '', u.password)) {
-    return res.status(401).json({
-      error: 'Email or password is incorrect'
+    if (!u || !await bcrypt.compare(password || '', u.password)) {
+      return res.status(401).json({
+        error: 'Email or password is incorrect'
+      });
+    }
+
+    if (u.agency && u.agency.status !== 'ACTIVE') {
+      return res.status(403).json({
+        error: 'This agency account is inactive or suspended'
+      });
+    }
+
+    const payload = {
+      id: u.id,
+      name: u.name,
+      role: u.role,
+      agencyId: u.agencyId,
+      clientId: u.clientId
+    };
+
+    res.json({
+      token: jwt.sign(payload, secret, {
+        expiresIn: '12h'
+      }),
+      user: payload
     });
   }
+);
 
-  if (u.agency && u.agency.status !== 'ACTIVE') {
-    return res.status(403).json({
-      error: 'This agency account is inactive or suspended'
-    });
+app.get(
+  '/api/me',
+  auth,
+  (req: AuthReq, res: Response) => {
+    res.json(req.user);
   }
+);
 
-  const payload = {
-    id: u.id,
-    name: u.name,
-    role: u.role,
-    agencyId: u.agencyId,
-    clientId: u.clientId
-  };
-
-  res.json({
-    token: jwt.sign(payload, secret, { expiresIn: '12h' }),
-    user: payload
-  });
-});
-
-app.get('/api/me', auth, (req: AuthReq, res: Response) => {
-  res.json(req.user);
-});
-
-// Platform-level Super Admin endpoints
+// Super Admin overview
 app.get(
   '/api/admin/overview',
   auth,
   roles(Role.SUPER_ADMIN),
   async (_req, res) => {
-    const [agencies, users, clients, projects, active] =
-      await Promise.all([
-        db.agency.count(),
-        db.user.count(),
-        db.client.count(),
-        db.project.count(),
-        db.agency.count({ where: { status: 'ACTIVE' } })
-      ]);
+    const [
+      agencies,
+      users,
+      clients,
+      projects,
+      active
+    ] = await Promise.all([
+      db.agency.count(),
+      db.user.count(),
+      db.client.count(),
+      db.project.count(),
+      db.agency.count({
+        where: { status: 'ACTIVE' }
+      })
+    ]);
 
     res.json({
       agencies,
@@ -162,6 +206,106 @@ app.get(
   }
 );
 
+// Create Agency with Agency Admin
+app.post(
+  '/api/admin/agencies',
+  auth,
+  roles(Role.SUPER_ADMIN),
+  async (req: Request, res: Response) => {
+    try {
+      const {
+        name,
+        email,
+        adminName,
+        adminEmail,
+        adminPassword
+      } = req.body || {};
+
+      if (
+        !name?.trim() ||
+        !email?.trim() ||
+        !adminName?.trim() ||
+        !adminEmail?.trim() ||
+        !adminPassword
+      ) {
+        return res.status(400).json({
+          error: 'All fields are required'
+        });
+      }
+
+      if (
+        typeof adminPassword !== 'string' ||
+        adminPassword.length < 8
+      ) {
+        return res.status(400).json({
+          error: 'Admin password must be at least 8 characters'
+        });
+      }
+
+      const normalizedAdminEmail =
+        adminEmail.trim().toLowerCase();
+
+      const normalizedAgencyEmail =
+        email.trim().toLowerCase();
+
+      const existing = await db.user.findUnique({
+        where: {
+          email: normalizedAdminEmail
+        }
+      });
+
+      if (existing) {
+        return res.status(409).json({
+          error: 'An account with this admin email already exists'
+        });
+      }
+
+      const hashedPassword = await bcrypt.hash(
+        adminPassword,
+        12
+      );
+
+      const created = await db.$transaction(
+        async (tx: any) => {
+          return tx.agency.create({
+            data: {
+              name: name.trim(),
+              email: normalizedAgencyEmail,
+              status: 'ACTIVE',
+              users: {
+                create: {
+                  name: adminName.trim(),
+                  email: normalizedAdminEmail,
+                  password: hashedPassword,
+                  role: 'AGENCY_ADMIN'
+                }
+              }
+            },
+            include: {
+              _count: {
+                select: {
+                  users: true,
+                  clients: true,
+                  projects: true
+                }
+              }
+            }
+          });
+        }
+      );
+
+      return res.status(201).json(created);
+    } catch (error: any) {
+      console.error('Create agency error:', error);
+
+      return res.status(500).json({
+        error: 'Failed to create agency'
+      });
+    }
+  }
+);
+
+// Get all agencies
 app.get(
   '/api/admin/agencies',
   auth,
@@ -187,13 +331,16 @@ app.get(
           }
         }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: {
+        createdAt: 'desc'
+      }
     });
 
     res.json(rows);
   }
 );
 
+// Update agency status
 app.patch(
   '/api/admin/agencies/:id/status',
   auth,
@@ -202,11 +349,15 @@ app.patch(
     const status = req.body.status as Status;
 
     if (!['ACTIVE', 'INACTIVE', 'SUSPENDED'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' });
+      return res.status(400).json({
+        error: 'Invalid status'
+      });
     }
 
     const a = await db.agency.update({
-      where: { id: Number(req.params.id) },
+      where: {
+        id: Number(req.params.id)
+      },
       data: { status }
     });
 
@@ -214,13 +365,16 @@ app.patch(
   }
 );
 
+// Get agency details
 app.get(
   '/api/admin/agencies/:id',
   auth,
   roles(Role.SUPER_ADMIN),
   async (req: Request, res: Response) => {
     const a = await db.agency.findUnique({
-      where: { id: Number(req.params.id) },
+      where: {
+        id: Number(req.params.id)
+      },
       include: {
         users: {
           select: {
@@ -236,7 +390,9 @@ app.get(
     });
 
     if (!a) {
-      return res.status(404).json({ error: 'Agency not found' });
+      return res.status(404).json({
+        error: 'Agency not found'
+      });
     }
 
     res.json(a);
@@ -281,7 +437,9 @@ app.get(
           tasks: true,
           client: true
         },
-        orderBy: { createdAt: 'desc' }
+        orderBy: {
+          createdAt: 'desc'
+        }
       }),
 
       db.task.count({
@@ -300,7 +458,9 @@ app.get(
             agencyId: aid,
             ...clientScope
           },
-          status: { in: ['OPEN', 'IN_REVIEW'] }
+          status: {
+            in: ['OPEN', 'IN_REVIEW']
+          }
         }
       }),
 
@@ -311,7 +471,9 @@ app.get(
             ? { visibility: 'CLIENT' }
             : {})
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: {
+          createdAt: 'desc'
+        },
         take: 8
       })
     ]);
@@ -320,9 +482,11 @@ app.get(
       ...p,
       progress: p.tasks.length
         ? Math.round(
-            p.tasks.filter((t: any) => t.status === 'DONE').length /
-            p.tasks.length *
-            100
+            p.tasks.filter(
+              (t: any) => t.status === 'DONE'
+            ).length /
+              p.tasks.length *
+              100
           )
         : 0
     }));
@@ -345,13 +509,19 @@ app.get(
   roles(Role.AGENCY_ADMIN, Role.AGENCY_TEAM),
   async (req: AuthReq, res: Response) => {
     const rows = await db.client.findMany({
-      where: { agencyId: tenant(req.user!) },
+      where: {
+        agencyId: tenant(req.user!)
+      },
       include: {
         _count: {
-          select: { projects: true }
+          select: {
+            projects: true
+          }
         }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: {
+        createdAt: 'desc'
+      }
     });
 
     res.json(rows);
@@ -364,7 +534,13 @@ app.post(
   agency,
   roles(Role.AGENCY_ADMIN),
   async (req: AuthReq, res: Response) => {
-    const { company, contactName, email, phone, notes } = req.body;
+    const {
+      company,
+      contactName,
+      email,
+      phone,
+      notes
+    } = req.body;
 
     if (!company || !contactName || !email) {
       return res.status(400).json({
@@ -408,7 +584,9 @@ app.get(
 
     if (!requireClientId(req, res)) return;
 
-    const where: any = { agencyId: aid };
+    const where: any = {
+      agencyId: aid
+    };
 
     if (user.role === 'CLIENT') {
       where.clientId = user.clientId!;
@@ -422,7 +600,9 @@ app.get(
         feedback: true,
         meetings: true
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: {
+        createdAt: 'desc'
+      }
     });
 
     res.json(
@@ -430,9 +610,11 @@ app.get(
         ...p,
         progress: p.tasks.length
           ? Math.round(
-              p.tasks.filter((t: any) => t.status === 'DONE').length /
-              p.tasks.length *
-              100
+              p.tasks.filter(
+                (t: any) => t.status === 'DONE'
+              ).length /
+                p.tasks.length *
+                100
             )
           : 0,
         meetings: p.meetings.filter(
@@ -520,13 +702,22 @@ app.post(
     });
 
     if (!p) {
-      return res.status(404).json({ error: 'Project not found' });
+      return res.status(404).json({
+        error: 'Project not found'
+      });
     }
 
-    const { title, description, dueDate, priority } = req.body;
+    const {
+      title,
+      description,
+      dueDate,
+      priority
+    } = req.body;
 
     if (!title) {
-      return res.status(400).json({ error: 'Task title required' });
+      return res.status(400).json({
+        error: 'Task title required'
+      });
     }
 
     const t = await db.task.create({
@@ -559,7 +750,9 @@ app.patch(
     });
 
     if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
+      return res.status(404).json({
+        error: 'Task not found'
+      });
     }
 
     const data: any = {};
@@ -602,10 +795,15 @@ app.post(
     });
 
     if (!p) {
-      return res.status(404).json({ error: 'Project not found' });
+      return res.status(404).json({
+        error: 'Project not found'
+      });
     }
 
-    const { title, description } = req.body;
+    const {
+      title,
+      description
+    } = req.body;
 
     if (!title || !description) {
       return res.status(400).json({
@@ -656,8 +854,12 @@ app.get(
           ...clientScope
         }
       },
-      include: { project: true },
-      orderBy: { createdAt: 'desc' }
+      include: {
+        project: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
     });
 
     res.json(rows);
@@ -680,12 +882,16 @@ app.patch(
     });
 
     if (!f) {
-      return res.status(404).json({ error: 'Feedback not found' });
+      return res.status(404).json({
+        error: 'Feedback not found'
+      });
     }
 
     const updated = await db.feedback.update({
       where: { id: f.id },
-      data: { status: req.body.status }
+      data: {
+        status: req.body.status
+      }
     });
 
     res.json(updated);
@@ -707,7 +913,9 @@ app.post(
     });
 
     if (!p) {
-      return res.status(404).json({ error: 'Project not found' });
+      return res.status(404).json({
+        error: 'Project not found'
+      });
     }
 
     const m = await db.meeting.create({
@@ -743,7 +951,9 @@ app.post(
     });
 
     if (!p) {
-      return res.status(404).json({ error: 'Project not found' });
+      return res.status(404).json({
+        error: 'Project not found'
+      });
     }
 
     const context =
@@ -779,7 +989,8 @@ app.post(
 
         return res.json({
           draft:
-            out.choices[0]?.message?.content || 'Update unavailable',
+            out.choices[0]?.message?.content ||
+            'Update unavailable',
           source: 'AI'
         });
       }
@@ -801,12 +1012,21 @@ app.post(
 
 // Error handler
 app.use(
-  (err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  (
+    err: Error,
+    _req: Request,
+    res: Response,
+    _next: NextFunction
+  ) => {
     console.error(err);
-    res.status(500).json({ error: 'Unexpected server error' });
+
+    res.status(500).json({
+      error: 'Unexpected server error'
+    });
   }
 );
 
+// Start server
 const port = Number(process.env.PORT || 4000);
 
 app.listen(port, () => {
