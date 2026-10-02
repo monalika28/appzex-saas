@@ -190,6 +190,24 @@ export default function Home() {
     }
   };
 
+  const updateTaskStatus = async (id: number, status: string) => {
+    try {
+      await call(`/tasks/${id}`, 'PATCH', { status });
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const updateProjectStatus = async (id: number, status: string) => {
+    try {
+      await call(`/projects/${id}/status`, 'PATCH', { status });
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
   const ai = async (p: Project) => {
     try {
       const r = await call(
@@ -651,9 +669,22 @@ export default function Home() {
                               minWidth: 90,
                             }}
                           >
-                            <span className="pill">
-                              {p.status.replace('_', ' ')}
-                            </span>
+                            {isClient ? (
+                              <span className="pill">{p.status.replace('_', ' ')}</span>
+                            ) : (
+                              <select
+                                className="input"
+                                aria-label={`Update status for ${p.name}`}
+                                style={{ margin: 0, padding: '5px 8px', fontSize: 11, minWidth: 112 }}
+                                value={p.status}
+                                onChange={(e) => updateProjectStatus(p.id, e.target.value)}
+                              >
+                                <option value="PLANNING">PLANNING</option>
+                                <option value="ACTIVE">ACTIVE</option>
+                                <option value="ON_HOLD">ON HOLD</option>
+                                <option value="COMPLETED">COMPLETED</option>
+                              </select>
+                            )}
 
                             <div
                               className="small"
@@ -699,7 +730,21 @@ export default function Home() {
                               {p.tasks.map((task: any) => (
                                 <div key={task.id} className="small" style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '5px 0', borderTop: '1px solid #edf0f5' }}>
                                   <span>{task.title}</span>
-                                  <span className="pill">{String(task.status).replace('_', ' ')}</span>
+                                  {isClient ? (
+                                    <span className="pill">{String(task.status).replace('_', ' ')}</span>
+                                  ) : (
+                                    <select
+                                      className="input"
+                                      aria-label={`Update task ${task.title}`}
+                                      style={{ margin: 0, padding: '3px 6px', fontSize: 10, width: 116 }}
+                                      value={task.status}
+                                      onChange={(e) => updateTaskStatus(task.id, e.target.value)}
+                                    >
+                                      <option value="TODO">TO DO</option>
+                                      <option value="IN_PROGRESS">IN PROGRESS</option>
+                                      <option value="DONE">DONE</option>
+                                    </select>
+                                  )}
                                 </div>
                               ))}
                             </div>
