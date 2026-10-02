@@ -994,6 +994,23 @@ export default function Home() {
                         set('phone', e.target.value)
                       }
                     />
+
+                    <label className="small">
+                      Client portal password
+                    </label>
+                    <input
+                      className="input"
+                      type="password"
+                      minLength={8}
+                      placeholder="At least 8 characters"
+                      value={form.portalPassword || ''}
+                      onChange={(e) =>
+                        set('portalPassword', e.target.value)
+                      }
+                    />
+                    <p className="small">
+                      Share these sign-in details securely with the client.
+                    </p>
                   </>
                 )}
 
@@ -1064,6 +1081,7 @@ export default function Home() {
                   disabled={
                     busy ||
                     (modal === 'team' && (!form.name?.trim() || !form.email?.trim() || !form.password || form.password.length < 8)) ||
+                    (modal === 'client' && (!form.company?.trim() || !form.contactName?.trim() || !form.email?.trim() || !form.portalPassword || form.portalPassword.length < 8)) ||
                     (modal === 'agency' &&
                       (!form.name?.trim() ||
                         !form.email?.trim() ||
