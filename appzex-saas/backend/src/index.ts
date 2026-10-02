@@ -539,42 +539,67 @@ app.post(
   agency,
   roles(Role.AGENCY_ADMIN),
   async (req: AuthReq, res: Response) => {
-    const {
-      company,
-      contactName,
-      email,
-      phone,
-      notes
-    } = req.body;
+    const { company, contactName, email, phone, notes, portalPassword } = req.body || {};
 
-    if (!company || !contactName || !email) {
+    if (
+      typeof company !== 'string' || !company.trim() ||
+      typeof contactName !== 'string' || !contactName.trim() ||
+      typeof email !== 'string' || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email.trim()) ||
+      typeof portalPassword !== 'string' || portalPassword.length < 8
+    ) {
       return res.status(400).json({
-        error: 'Company, contact name and email are required'
+        error: 'Enter a company, contact name, valid email and portal password of at least 8 characters'
       });
     }
 
     const aid = tenant(req.user!);
+    const normalizedEmail = email.trim().toLowerCase();
+    const existing = await db.user.findUnique({ where: { email: normalizedEmail } });
+    if (existing) {
+      return res.status(409).json({ error: 'An account with this email already exists' });
+    }
 
-    const c = await db.client.create({
-      data: {
-        company,
-        contactName,
-        email,
-        phone,
-        notes,
-        agencyId: aid
+    try {
+      const hashedPassword = await bcrypt.hash(portalPassword, 12);
+      const created = await db.$transaction(async (tx: any) => {
+        const client = await tx.client.create({
+          data: {
+            company: company.trim(),
+            contactName: contactName.trim(),
+            email: normalizedEmail,
+            phone: typeof phone === 'string' ? phone.trim() || null : null,
+            notes: typeof notes === 'string' ? notes.trim() || null : null,
+            agencyId: aid,
+            users: {
+              create: {
+                name: contactName.trim(),
+                email: normalizedEmail,
+                password: hashedPassword,
+                role: Role.CLIENT,
+                agencyId: aid
+              }
+            }
+          },
+          include: { _count: { select: { projects: true } } }
+        });
+
+        await tx.activity.create({
+          data: {
+            type: 'client.created',
+            message: `Client ${company.trim()} created with portal access`,
+            agencyId: aid
+          }
+        });
+        return client;
+      });
+      return res.status(201).json(created);
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        return res.status(409).json({ error: 'An account with this email already exists' });
       }
-    });
-
-    await db.activity.create({
-      data: {
-        type: 'client.created',
-        message: `Client ${company} created`,
-        agencyId: aid
-      }
-    });
-
-    res.status(201).json(c);
+      console.error('Create client error:', error);
+      return res.status(500).json({ error: 'Failed to create client account' });
+    }
   }
 );
 
