@@ -544,7 +544,7 @@ app.post(
     if (
       typeof company !== 'string' || !company.trim() ||
       typeof contactName !== 'string' || !contactName.trim() ||
-      typeof email !== 'string' || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email.trim()) ||
+      typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
       typeof portalPassword !== 'string' || portalPassword.length < 8
     ) {
       return res.status(400).json({
@@ -974,7 +974,7 @@ app.post(
     const { name, email, password } = req.body || {};
     if (
       typeof name !== 'string' || !name.trim() ||
-      typeof email !== 'string' || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email.trim()) ||
+      typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
       typeof password !== 'string' || password.length < 8
     ) {
       return res.status(400).json({
