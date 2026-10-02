@@ -8,14 +8,14 @@ A multi-tenant agency project management SaaS MVP built with Next.js 15, React, 
 - API health: https://appzex-saas-production.up.railway.app/api/health
 - Source: https://github.com/monalika28/appzex-saas
 
-The hosted application may not include changes from the `assignment-completion` branch until that branch is reviewed, merged and redeployed.
+The hosted application reflects the latest merged production deployment. Changes in an unmerged feature branch are not included in the live app until reviewed, merged and redeployed.
 
 ## Features
 
 - **Super Admin:** platform metrics, agency listing/search, agency detail endpoint, agency creation with an initial admin, and agency activation/suspension.
-- **Agency workspace:** tenant-scoped client and project management, task creation/status updates, feedback tracking, meeting creation and team directory.
+- **Agency workspace:** tenant-scoped client and project management, task creation/status updates, feedback tracking, meeting creation and team directory. The UI supports creating tasks and updating project/task statuses.
 - **Team management:** agency admins can create Agency Team accounts; passwords are bcrypt-hashed and users are scoped to their agency.
-- **Client portal:** project and task progress, client-scoped feedback and only client-visible meetings/activity.
+- **Client portal:** project and task progress, client-scoped feedback submission and only client-visible meetings/activity. Agency admins can create a client portal account when adding a client by setting a password; share the credentials securely.
 - **AI update draft:** generates a concise project update with OpenAI when configured, with a deterministic fallback when no key is configured or the AI request fails.
 - **Access control:** JWT authentication, role checks, tenant scope taken from the authenticated user, and agency status checks.
 
