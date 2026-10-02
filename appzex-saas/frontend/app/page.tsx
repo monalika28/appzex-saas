@@ -153,6 +153,14 @@ export default function Home() {
         await call('/team', 'POST', form);
       }
 
+      if (modal === 'task') {
+        await call(`/projects/${form.projectId}/tasks`, 'POST', form);
+      }
+
+      if (modal === 'feedback') {
+        await call(`/projects/${form.projectId}/feedback`, 'POST', form);
+      }
+
       setModal('');
       setForm({});
       await load();
@@ -656,12 +664,45 @@ export default function Home() {
                           </div>
 
                           {!isClient && (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              <button
+                                className="btn secondary"
+                                onClick={() => {
+                                  setForm({ projectId: p.id, priority: 'MEDIUM' });
+                                  setModal('task');
+                                }}
+                              >
+                                + Task
+                              </button>
+                              <button
+                                className="btn secondary"
+                                onClick={() => ai(p)}
+                              >
+                                AI update
+                              </button>
+                            </div>
+                          )}
+                          {isClient && (
                             <button
                               className="btn secondary"
-                              onClick={() => ai(p)}
+                              onClick={() => {
+                                setForm({ projectId: p.id });
+                                setModal('feedback');
+                              }}
                             >
-                              AI update
+                              Send feedback
                             </button>
+                          )}
+                          {!!p.tasks?.length && (
+                            <div style={{ flexBasis: '100%', paddingLeft: 48 }}>
+                              <div className="small" style={{ fontWeight: 600, marginBottom: 6 }}>Tasks</div>
+                              {p.tasks.map((task: any) => (
+                                <div key={task.id} className="small" style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '5px 0', borderTop: '1px solid #edf0f5' }}>
+                                  <span>{task.title}</span>
+                                  <span className="pill">{String(task.status).replace('_', ' ')}</span>
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </div>
                       ))
@@ -823,7 +864,11 @@ export default function Home() {
                       ? 'Create Agency'
                       : modal === 'team'
                         ? 'Add team member'
-                        : 'AI-generated client update'}
+                        : modal === 'task'
+                          ? 'Add project task'
+                          : modal === 'feedback'
+                            ? 'Send project feedback'
+                            : 'AI-generated client update'}
               </div>
 
               <button
@@ -1014,6 +1059,30 @@ export default function Home() {
                   </>
                 )}
 
+                {/* ADD TASK */}
+                {modal === 'task' && (
+                  <>
+                    <label className="small">Task title</label>
+                    <input className="input" value={form.title || ''} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Prepare wireframes" />
+                    <label className="small">Description</label>
+                    <textarea className="input" rows={3} value={form.description || ''} onChange={(e) => set('description', e.target.value)} placeholder="Task details" />
+                    <label className="small">Priority</label>
+                    <select className="input" value={form.priority || 'MEDIUM'} onChange={(e) => set('priority', e.target.value)}>
+                      <option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>URGENT</option>
+                    </select>
+                  </>
+                )}
+
+                {/* CLIENT FEEDBACK */}
+                {modal === 'feedback' && (
+                  <>
+                    <label className="small">Feedback title</label>
+                    <input className="input" value={form.title || ''} onChange={(e) => set('title', e.target.value)} placeholder="What would you like to share?" />
+                    <label className="small">Details</label>
+                    <textarea className="input" rows={4} value={form.description || ''} onChange={(e) => set('description', e.target.value)} placeholder="Describe your feedback or request" />
+                  </>
+                )}
+
                 {/* CREATE PROJECT */}
                 {modal === 'project' && (
                   <>
@@ -1082,6 +1151,8 @@ export default function Home() {
                     busy ||
                     (modal === 'team' && (!form.name?.trim() || !form.email?.trim() || !form.password || form.password.length < 8)) ||
                     (modal === 'client' && (!form.company?.trim() || !form.contactName?.trim() || !form.email?.trim() || !form.portalPassword || form.portalPassword.length < 8)) ||
+                    (modal === 'task' && !form.title?.trim()) ||
+                    (modal === 'feedback' && (!form.title?.trim() || !form.description?.trim())) ||
                     (modal === 'agency' &&
                       (!form.name?.trim() ||
                         !form.email?.trim() ||
